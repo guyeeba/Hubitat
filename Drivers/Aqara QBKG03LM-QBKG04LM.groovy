@@ -1,30 +1,42 @@
+// 12.18.2018: Added double click capability 
+//             Buttons can be separated from switch (buttons and switches work just fine, but they work independently)
+
 metadata {
-    definition (name: "Aqara Wall Switch (multi-endpoint)", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "Aqara Wall Switch (QBKG03LM, QBKG04LM, no neutral)", namespace: "guyee", author: "Péter Gulyás") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
 		capability "HoldableButton"
 		capability "ReleasableButton"
+		capability "DoubleTapableButton"
 
         command "childOn"
         command "childOff"
         command "childRefresh"
         command "recreateChildDevices"
         command "deleteChildren"
-        // two buttons, no neutral required
+
+		// QBKG04LM: one button, no neutral required
+		// Disconnect button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
         fingerprint profileId: "0104", inClusters: "0000,0003,0001,0002,0019,000A", outClusters: "0000,000A,0019", manufacturer: "LUMI", model: "lumi.ctrl_neutral1", deviceJoinName: "Aqara Wall switch"
+        // QBKG03LM: two buttons, no neutral required
+		// Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		// Disconnect right button from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+        fingerprint profileId: "0104", inClusters: "0000,0003,0001,0002,0019,000A", outClusters: "0000,000A,0019", manufacturer: "LUMI", model: "lumi.ctrl_neutral2", deviceJoinName: "Aqara Wall switch"
     }
 
     preferences {
         input name: "numButtons", type: "enum", description: "", title: "Number of buttons", options: [[1:"1"],[2:"2"]], defaultValue: 1
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
+        input name: "leftButtonDisconnect", type: "bool", title: "Disconnect left button from switch", defaultValue: false
+        input name: "rightButtonDisconnect", type: "bool", title: "Disconnect right button from switch (double button devices)", defaultValue: false
     }
 }
 
 def logsOff(){
     log.warn "debug logging disabled..."
-    device.updateSetting("logEnable",[value:"false",type:"bool"])
+//    device.updateSetting("logEnable",[value:"false",type:"bool"])
 }
 
 def childRefresh(String deviceId)
@@ -36,17 +48,19 @@ def childRefresh(String deviceId)
 }
 
 def refresh() {
-    log.debug numButtons
     def cmds = []
     def children = getChildDevices()
     children?.each{
         cmds += childRefresh(it.deviceNetworkId)
     }
-    return cmds
+
+	return cmds
 }
 
 def parse(String description) {
-    log.debug description
+	if (txtEnable) {
+		log.debug description
+	}
     
     if (description.startsWith("catchall"))
     	return
@@ -78,12 +92,14 @@ def parse(String description) {
                 def messageMap = [
                     "00": "held",
                     "0000001001": "single-clicked",
-                    "01": "released"
+                    "01": "released",
+					"02": "double-clicked"
                     ]
                 def eventTypeMap = [
                     "00": "held",
                     "0000001001": "pushed",
-                    "01": "released"
+                    "01": "released",
+					"02": "doubleTapped"
                     ]
                 
                 events += [
@@ -98,7 +114,7 @@ def parse(String description) {
         } else {
             log.warn("Unknown endpoint $endpoint")
         }
-    } else if (cluster == 0x0000 && attrId == 0x0000) {
+    } else if (cluster == 0x0000) {
 	    def descMap = zigbee.parseDescriptionAsMap(description)
         def prefixLen = 4 + 2 + 4  // dni + endpoint + cluster
         def msgLen = Integer.parseInt(descMap.raw[prefixLen..(prefixLen + 1)], 16)
@@ -175,7 +191,7 @@ private parseXiaomiReport(description) {
 
     def events = []
     
-    if (manufacturerSpecificValues.containsKey("BatteryPct")) {
+    if (manufacturerSpecificValues?.containsKey("BatteryPct")) {
         events += [
 			name: 'battery',
 			value: manufacturerSpecificValues["BatteryPct"],
@@ -185,7 +201,7 @@ private parseXiaomiReport(description) {
 		]
     }
 
-    if (manufacturerSpecificValues.containsKey("Temperature")) {
+    if (manufacturerSpecificValues?.containsKey("Temperature")) {
         events += [
 			name: 'temperature',
 			value: manufacturerSpecificValues["Temperature"],
@@ -195,7 +211,27 @@ private parseXiaomiReport(description) {
 		]
     }
 
-    return events
+    if (manufacturerSpecificValues?.containsKey("Power")) {
+        events += [
+			name: 'power',
+			value: manufacturerSpecificValues["Power"],
+			unit: "W",
+			isStateChange: true,
+			descriptionText: "Actual power consumption is ${manufacturerSpecificValues["Power"]}W"
+		]
+    }
+
+    if (manufacturerSpecificValues?.containsKey("Energy")) {
+        events += [
+			name: 'energy',
+			value: manufacturerSpecificValues["Energy"],
+			unit: "kWh",
+			isStateChange: true,
+			descriptionText: "Power consumption so far is ${manufacturerSpecificValues["Energy"]}kWh"
+		]
+    }
+
+	return events
 }
 
 private parseXiaomiReport_FF01(payload) {
@@ -247,13 +283,30 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 8 ]  // Just a guess :)
             	break;
             case 0x05: // RSSI
-            	values += [ RSSI : toBigEndian(dataPayload) ]
+		        log.warn("RSSI: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
+            	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
             	break;
             case 0x06: // LQI
-            	values += [ LQI : toBigEndian(dataPayload) ]
+            	values += [ LQI : 255 - toBigEndian(dataPayload) ]
             	break;
             case 0x0A: // router
             	values += [ RouterID : Integer.toHexString(toBigEndian(dataPayload)) ]
+            	break;
+            case 0x64: // switch 1 state
+            	values += [ Switch1State : toBigEndian(dataPayload) ]
+            	break;
+            case 0x65: // switch 2 state
+            	values += [ Switch2State : toBigEndian(dataPayload) ]
+            	break;
+			case 0x95: // energy
+				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
+				float floatValue = Float.intBitsToFloat(theValue.intValue());
+            	values += [ Energy : floatValue ]
+            	break;
+			case 0x98: // power
+				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
+				float floatValue = Float.intBitsToFloat(theValue.intValue());
+            	values += [ Power : floatValue ]
             	break;
             default:
 		        log.warn("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
@@ -301,6 +354,10 @@ def configure() {
             "he cr 0x${device.deviceNetworkId} ${endpointId} 0x0006 0 0x10 0 0x3600 {}","delay 200",
     	]
     }
+	
+	cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+	cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x22, [mfgCode: "0x115F"])
+	
     cmds += refresh()
     
 	sendEvent(name:"numberOfButtons", value: numButtons)
@@ -401,5 +458,5 @@ private int EPtoIndex(int EP)
 }
 
 private def displayDebugLog(message) {
-	if (debugLogging) log.debug "${device.displayName}: ${message}"
+	if (logEnable) log.debug "${device.displayName}: ${message}"
 }
