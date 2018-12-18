@@ -1,4 +1,5 @@
 // 12.18.2018: Added double click capability 
+//             Added temperature measurement capability
 //             Buttons can be separated from switch (buttons and switches work just fine, but they work independently)
 
 metadata {
@@ -9,6 +10,7 @@ metadata {
 		capability "HoldableButton"
 		capability "ReleasableButton"
 		capability "DoubleTapableButton"
+		capability "Temperature Measurement"
 
         command "childOn"
         command "childOff"
@@ -191,6 +193,7 @@ private parseXiaomiReport(description) {
 
     def events = []
     
+	/* Non battery-powered devices
     if (manufacturerSpecificValues?.containsKey("BatteryPct")) {
         events += [
 			name: 'battery',
@@ -200,6 +203,7 @@ private parseXiaomiReport(description) {
 			descriptionText: "Battery level is ${manufacturerSpecificValues["BatteryPct"]}% (${manufacturerSpecificValues["BatteryVolts"]} Volts)"
 		]
     }
+	*/
 
     if (manufacturerSpecificValues?.containsKey("Temperature")) {
         events += [
