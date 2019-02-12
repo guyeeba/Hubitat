@@ -152,7 +152,7 @@ private parseXiaomiReport(description) {
         def dataType = Integer.parseInt(description[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
         
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -181,7 +181,7 @@ private parseXiaomiReport(description) {
         switch (attrId) {
             case 0xFF01:
              	manufacturerSpecificValues = parseXiaomiReport_FF01(dataPayload)
-            	log.warn(manufacturerSpecificValues);
+            	displayDebugLog(manufacturerSpecificValues);
                	break;
             case 0x0005:
              	modelId = parseXiaomiReport_0005(dataPayload)
@@ -235,6 +235,10 @@ private parseXiaomiReport(description) {
 		]
     }
 
+	if (manufacturerSpecificValues?.containsKey("RouterID")) {
+		state.routerID = manufacturerSpecificValues["RouterID"].toUpperCase()
+	}
+
 	return events
 }
 
@@ -251,7 +255,7 @@ private parseXiaomiReport_FF01(payload) {
         def dataType = Integer.parseInt(payload[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
 
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -287,7 +291,6 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 8 ]  // Just a guess :)
             	break;
             case 0x05: // RSSI
-		        log.warn("RSSI: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
             	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
             	break;
             case 0x06: // LQI
@@ -313,7 +316,7 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Power : floatValue ]
             	break;
             default:
-		        log.warn("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
+		        displayDebugLog("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
         }
     }
     

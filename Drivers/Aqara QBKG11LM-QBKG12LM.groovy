@@ -19,11 +19,16 @@ metadata {
 		// - endpoint 0x05, cluster 0x0012 (multistate input), attr 0x0055: Left button pushed (value = 0x0001)
 		// - endpoint 0x02, cluster 0x0002 (on/off),           attr 0x0000: Right button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
 		// - endpoint 0x06, cluster 0x0012 (multistate input), attr 0x0055: Right button pushed (value = 0x0001)
+		// features:
+		// - Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		// - Disconnect right button from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
 		fingerprint profileId: "0104", inClusters: "0000,0004,0003,0006,0010,0005,000A,0001,0002", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.ctrl_ln2.aq1", deviceJoinName: "Aqara Wall switch"
-		// one buttons, neutral required (QBKG11LM)
+		// one button, neutral required (QBKG11LM)
 		// reports:
 		// - endpoint 0x01, cluster 0x0006 (on/off),           attr 0x0000: Left button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
 		// - endpoint 0x05, cluster 0x0012 (multistate input), attr 0x0055: Left button pushed (value = 0x0001), left button double-clicked (value = 0x0002)
+		// features:
+		// - Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
 		fingerprint profileId: "0104", inClusters: "0000,0004,0003,0006,0010,0005,000A,0001,0002", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.ctrl_ln1.aq1", deviceJoinName: "Aqara Wall switch"
     }
 
@@ -31,6 +36,9 @@ metadata {
         input name: "numButtons", type: "enum", description: "", title: "Number of buttons", options: [[1:"1"],[2:"2"]], defaultValue: 2
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
+        input name: "electricityCost", type: "float", title: "The price of 1 kWh of electricity", defaultValue: 0
+        input name: "leftButtonDisconnect", type: "bool", title: "Disconnect left button from switch", defaultValue: false
+        input name: "rightButtonDisconnect", type: "bool", title: "Disconnect right button from switch (double button devices)", defaultValue: false
     }
 }
 
@@ -175,12 +183,12 @@ private parseXiaomiReport(description) {
     	def attrId = toBigEndian(description[msgPos++..(msgPos+=3)-1])
         def dataType = Integer.parseInt(description[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
-        
-        if (dataLen == null) { // Probably variable length
+
+        if (dataLen == null || dataLen == -1) { // Probably variable length, 2.0.4 returns null, 2.0.5 returns -1 for variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
-			        dataLen = Integer.parseInt(description[msgPos++..msgPos++], 16)
+		 			dataLen = Integer.parseInt(description[msgPos++..msgPos++], 16)
                 	break;
                 case DataType.STRING_LONG_OCTET:
                 case DataType.STRING_LONG_CHAR:
@@ -192,8 +200,8 @@ private parseXiaomiReport(description) {
             }
         }
         
-        if (dataLen * 2 > msgLength - msgPos) {  // Yes, it happens with lumi.sensor_86sw2 (WXKG02LM)
-            log.error("WTF Xiaomi, packet length received from you (${dataLen} bytes) is greater than the length of remaining data (${(msgLength - msgPos) / 2} bytes)!")
+		if (dataLen * 2 > msgLength - msgPos) {  // Yes, it happens with lumi.sensor_86sw2 (WXKG02LM)
+            log.warn("WTF Xiaomi, packet length received from you (${dataLen} bytes) is greater than the length of remaining data (${(msgLength - msgPos) / 2} bytes)!")
         	dataLen = (msgLength - msgPos) / 2
         }
 
@@ -215,7 +223,7 @@ private parseXiaomiReport(description) {
              	modelId = parseXiaomiReport_0005(dataPayload)
                	break;
             default:
-                log.warn("Unsupported attribute in Xiaomi Report msg: attrID = 0x${Integer.toHexString(attrId)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
+                displayDebugLog("Unsupported attribute in Xiaomi Report msg: attrID = 0x${Integer.toHexString(attrId)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
         }
     }
 
@@ -259,7 +267,13 @@ private parseXiaomiReport(description) {
 			isStateChange: true,
 			descriptionText: "Power consumption so far is ${manufacturerSpecificValues["Energy"]}kWh"
 		]
+		
+		updateConsumptionStatistics(manufacturerSpecificValues["Energy"])
     }
+	
+	if (manufacturerSpecificValues?.containsKey("RouterID")) {
+		state.routerID = manufacturerSpecificValues["RouterID"].toUpperCase()
+	}
 	
 	return events
 }
@@ -277,7 +291,7 @@ private parseXiaomiReport_FF01(payload) {
         def dataType = Integer.parseInt(payload[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
 
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -298,7 +312,7 @@ private parseXiaomiReport_FF01(payload) {
         if (dataLen != 0)
         	dataPayload = payload[msgPos++..(msgPos+=(dataLen * 2) - 1)-1]
         
-        switch (dataTag) {
+		switch (dataTag) {
             case 0x01: // Battery
                 def rawVolts = toBigEndian(dataPayload) / 1000
 				def minVolts = voltsmin ? voltsmin : 2.5
@@ -313,10 +327,10 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 8 ]  // Just a guess :)
             	break;
             case 0x05: // RSSI
-            	values += [ RSSI : toBigEndian(dataPayload) ]
+            	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
             	break;
             case 0x06: // LQI
-            	values += [ LQI : toBigEndian(dataPayload) ]
+            	values += [ LQI : 255 - toBigEndian(dataPayload) ]
             	break;
             case 0x0A: // router
             	values += [ RouterID : Integer.toHexString(toBigEndian(dataPayload)) ]
@@ -338,7 +352,7 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Power : floatValue ]
             	break;
             default:
-		        log.warn("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
+		        displayDebugLog("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
         }
     }
     
@@ -389,9 +403,9 @@ def configure() {
             "he cr 0x${device.deviceNetworkId} ${endpointId} 0x0006 0 0x10 0 0x3600 {}","delay 200",
     	]
     }
-//	cmds += zigbee.configureReporting(0x000C, 0x0055, 0x39, 5, 6000, 5)
-//    cmds += [ "zcl global send-me-a-report 0x000C 0x0055 0x39 0x05 0x384 {00000000}","delay 200",
-//			"send 0x${device.deviceNetworkId} 0x03 0x03", "delay 200"]
+
+	cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+	cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x22, [mfgCode: "0x115F"])
 
 	cmds += refresh()
     
@@ -489,4 +503,62 @@ private int EPtoIndex(int EP)
 
 private def displayDebugLog(message) {
 	if (logEnable) log.debug "${device.displayName}: ${message}"
+}
+
+private updateConsumptionStatistics(float consumption)
+{
+	Date now = new Date()
+	
+	if (!state.consumptionThisMonthStartValue) {
+		state.consumptionThisMonthStartValue = consumption
+		state.consumptionThisMonthStartDate = now
+ 	}
+
+	if (!state.consumptionThisWeekStartValue) {
+		state.consumptionThisWeekStartValue = consumption
+		state.consumptionThisWeekStartDate = now
+ 	}
+
+	Date thisMonthStartDate = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.consumptionThisMonthStartDate)
+	Date thisWeekStartDate = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.consumptionThisWeekStartDate)
+	
+	if (!electricityCost) {
+		log.warn("Price of electricity is not set, cannot compute costs!")
+	}
+
+	if (thisMonthStartDate.getMonth() != now.getMonth()) {
+		log.info "A month have passed..."
+		
+		def lastMonthConsumption = consumption - state.consumptionThisMonthStartValue
+
+		state.consumptionLastMonthValue = lastMonthConsumption
+		state.consumptionThisMonthStartValue = consumption
+		state.consumptionThisMonthStartDate = now
+
+		if (electricityCost) {
+			state.consumptionLastMonthCost = lastMonthConsumption * Double.parseDouble(electricityCost)
+		}
+	}
+
+	if (thisWeekStartDate[Calendar.WEEK_OF_YEAR] != now[Calendar.WEEK_OF_YEAR]) {
+		log.info "A week have passed..."
+		
+		def lastWeekConsumption = consumption - state.consumptionThisWeekStartValue
+
+		state.consumptionLastWeekValue = lastWeekConsumption
+		state.consumptionThisWeekStartValue = consumption
+		state.consumptionThisWeekStartDate = now
+
+		if (electricityCost) {
+			state.consumptionLastWeekCost = lastWeekConsumption * Double.parseDouble(electricityCost)
+		}
+	}
+
+	state.consumptionThisWeekValue = consumption - state.consumptionThisWeekStartValue
+	state.consumptionThisMonthValue = consumption - state.consumptionThisMonthStartValue
+	
+	if (electricityCost) {
+		state.consumptionThisWeekCost = state.consumptionThisWeekValue * Double.parseDouble(electricityCost)
+		state.consumptionThisMonthCost = state.consumptionThisMonthValue * Double.parseDouble(electricityCost)
+	}
 }

@@ -173,7 +173,7 @@ private parseXiaomiReport(description) {
         def dataType = Integer.parseInt(description[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
         
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -202,7 +202,7 @@ private parseXiaomiReport(description) {
         switch (attrId) {
             case 0xFF01:
              	manufacturerSpecificValues = parseXiaomiReport_FF01(dataPayload)
-            	log.warn(manufacturerSpecificValues);
+//            	log.warn(manufacturerSpecificValues);
                	break;
             case 0x0005:
              	modelId = parseXiaomiReport_0005(dataPayload)
@@ -234,6 +234,10 @@ private parseXiaomiReport(description) {
 		]
     }
 
+	if (manufacturerSpecificValues?.containsKey("RouterID")) {
+		state.routerID = manufacturerSpecificValues["RouterID"].toUpperCase()
+	}
+
     return events
 }
 
@@ -250,7 +254,7 @@ private parseXiaomiReport_FF01(payload) {
         def dataType = Integer.parseInt(payload[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
 
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -286,10 +290,10 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 1 ]  // Just a guess :)
             	break;
             case 0x05: // RSSI?
-            	values += [ RSSI : toBigEndian(dataPayload) ]
+            	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
             	break;
             case 0x06: // LQI?
-            	values += [ LQI : toBigEndian(dataPayload) ]
+            	values += [ LQI : 255 - toBigEndian(dataPayload) ]
             	break;
             case 0x0A: // router
             	values += [ RouterID : Integer.toHexString(toBigEndian(dataPayload)) ]
@@ -299,7 +303,7 @@ private parseXiaomiReport_FF01(payload) {
 				if (contactVal.isStateChange)
             		values += contactVal
 				else
-					log.debug("Current state equals to previously set value, not setting again") // Probably this is what isStateChange is for, but let's stay in the safety zone, and skip this event
+					displayDebugLog("Current state equals to previously set value, not setting again") // Probably this is what isStateChange is for, but let's stay in the safety zone, and skip this event
             	break;
             default:
 		        log.warn("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")

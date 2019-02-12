@@ -49,31 +49,30 @@ metadata {
 	}
 }
 
-//import groovy.json.*
-
 // Parse incoming device messages to generate events
 def parse(String description) {
-//	log.debug new JsonBuilder( device ).toPrettyString()
+    def raw = description.split(",").find {it.split(":")[0].trim() == "read attr - raw"}?.split(":")[1].trim()
     def endpoint = description.split(",").find {it.split(":")[0].trim() == "endpoint"}?.split(":")[1].trim()
 	def cluster	= description.split(",").find {it.split(":")[0].trim() == "cluster"}?.split(":")[1].trim()
 	def attrId = description.split(",").find {it.split(":")[0].trim() == "attrId"}?.split(":")[1].trim()
 	def valueHex = description.split(",").find {it.split(":")[0].trim() == "value"}?.split(":")[1].trim()
 	def map = []
 
+	displayDebugLog("Parsing message: ${description}")
+
 	// lastCheckin can be used with webCoRE
 	sendEvent(name: "lastCheckin", value: now())
-
-	displayDebugLog("Parsing message: ${description}")
 
 	// Send message data to appropriate parsing function based on the type of report
 	if (cluster == "0006") {
 		// Parse button press: endpoint 01 = left, 02 = right, 03 = both
 		map += parseButtonPress(Integer.parseInt(endpoint))
     } else if (cluster == "0000") {
-	    def descMap = zigbee.parseDescriptionAsMap(description)
+// Unfortunately the following line causes exception, because Xiaomi reports wrong message length... dammit...
+//	    def descMap = zigbee.parseDescriptionAsMap(description)
         def prefixLen = 4 + 2 + 4  // dni + endpoint + cluster
-        def msgLen = Integer.parseInt(descMap.raw[prefixLen..(prefixLen + 1)], 16)
-        map += parseXiaomiReport(descMap.raw[(prefixLen + 2)..(prefixLen + 2 + msgLen - 1)])
+        def msgLen = Integer.parseInt(raw[prefixLen..(prefixLen + 1)], 16)
+        map += parseXiaomiReport(raw[(prefixLen + 2)..(prefixLen + 2 + msgLen - 1)])
     } else {
 		displayDebugLog("Unable to parse message")
 	}
@@ -171,7 +170,7 @@ private parseXiaomiReport(description) {
         def dataType = Integer.parseInt(description[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
         
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -188,7 +187,7 @@ private parseXiaomiReport(description) {
         }
         
         if (dataLen * 2 > msgLength - msgPos) {  // Yes, it happens with lumi.sensor_86sw2 (WXKG02LM)
-            log.error("WTF Xiaomi, packet length received from you (${dataLen} bytes) is greater than the length of remaining data (${(msgLength - msgPos) / 2} bytes)!")
+            displayDebugLog("WTF Xiaomi, packet length received from you (${dataLen} bytes) is greater than the length of remaining data (${(msgLength - msgPos) / 2} bytes)!")
         	dataLen = (msgLength - msgPos) / 2
         }
 
@@ -200,11 +199,11 @@ private parseXiaomiReport(description) {
         switch (attrId) {
             case 0xFF01:
              	manufacturerSpecificValues = parseXiaomiReport_FF01(dataPayload)
-            	log.warn(manufacturerSpecificValues);
+            	displayInfoLog(manufacturerSpecificValues);
                	break;
             case 0xFFF0: // reset
              	manufacturerSpecificValues = parseXiaomiReport_FFF0(dataPayload)
-//            	displayDebugLog(manufacturerSpecificValues);
+            	displayInfoLog(manufacturerSpecificValues);
                	break;
             case 0x0005:
              	modelId = parseXiaomiReport_0005(dataPayload)
@@ -256,6 +255,10 @@ private parseXiaomiReport(description) {
 		]
     }
 
+	if (manufacturerSpecificValues?.containsKey("RouterID")) {
+		state.routerID = manufacturerSpecificValues["RouterID"].toUpperCase()
+	}
+
 	return events
 }
 
@@ -272,7 +275,7 @@ private parseXiaomiReport_FF01(payload) {
         def dataType = Integer.parseInt(payload[msgPos++..msgPos++], 16)
         def dataLen = DataType.getLength(dataType)
 
-        if (dataLen == null) { // Probably variable length
+        if (dataLen == null || dataLen == -1) { // Probably variable length
             switch (dataType) {
                 case DataType.STRING_OCTET:
                 case DataType.STRING_CHAR:
@@ -307,10 +310,11 @@ private parseXiaomiReport_FF01(payload) {
             	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 8 ]  // Just a guess :)
             	break;
             case 0x05: // RSSI
-            	values += [ RSSI : toBigEndian(dataPayload) ]
+//		        log.warn("RSSI: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
+            	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
             	break;
             case 0x06: // LQI
-            	values += [ LQI : toBigEndian(dataPayload) ]
+            	values += [ LQI : 255 - toBigEndian(dataPayload) ]
             	break;
             case 0x0A: // router
             	values += [ RouterID : Integer.toHexString(toBigEndian(dataPayload)) ]
