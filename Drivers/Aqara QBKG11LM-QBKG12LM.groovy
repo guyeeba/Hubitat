@@ -55,17 +55,14 @@ def childRefresh(String deviceId)
     ]
 }
 
-//import groovy.json.*
-
 def refresh() {
-//    log.debug new JsonBuilder( device ).toPrettyString()
     def cmds = []
     def children = getChildDevices()
     children?.each{
         cmds += childRefresh(it.deviceNetworkId)
     }
 //    log.debug cmds
-
+	
     return cmds
 }
 
@@ -156,7 +153,7 @@ def setOnOffState(endpoint, state) {
 	childDevice.sendEvent(name:"switch", value:switchState, descriptionText:"Switch #${EPtoIndex(endpoint)} has been turned $switchState")
 }
 
-private String toBigEndianHexString(String hex) {
+String toBigEndianHexString(String hex) {
     int ret = 0;
     String hexBigEndian = "";
     if (hex.length() % 2 != 0) return ret;
@@ -166,12 +163,12 @@ private String toBigEndianHexString(String hex) {
     return hexBigEndian;
 }
 
-private int toBigEndian(String hex) {
+int toBigEndian(String hex) {
     ret = Integer.parseInt(toBigEndianHexString(hex), 16);
     return ret;
 }
 
-private parseXiaomiReport(description) {
+def parseXiaomiReport(description) {
 	displayDebugLog("Xiaomi parse string = ${description}")
 	def msgPos = 0
 	def msgLength = description.size()
@@ -278,7 +275,7 @@ private parseXiaomiReport(description) {
 	return events
 }
 
-private parseXiaomiReport_FF01(payload) {
+def parseXiaomiReport_FF01(payload) {
 	displayDebugLog("Xiaomi parse FF01 string = ${payload}")
     
     def values = [ : ]
@@ -359,13 +356,13 @@ private parseXiaomiReport_FF01(payload) {
     return values;
 }
 
-private parseXiaomiReport_FFF0(payload) {
+def parseXiaomiReport_FFF0(payload) {
 	log.warn("Xiaomi parse FFF0 string unimplemented: ${payload}")
 	
 	return null
 }
 
-private parseXiaomiReport_0005(payload) {
+def parseXiaomiReport_0005(payload) {
 	displayDebugLog("Xiaomi parse 0005 string = ${payload}")
     
     return new String(payload.decodeHex())
@@ -450,7 +447,7 @@ def deleteChildren() {
     }
 }
 
-private void createChildDevices() {
+def createChildDevices() {
     displayDebugLog "createChildDevices"
     
     for (i in 1..numButtons.toInteger()) {
@@ -505,22 +502,31 @@ private def displayDebugLog(message) {
 	if (logEnable) log.debug "${device.displayName}: ${message}"
 }
 
-private updateConsumptionStatistics(float consumption)
+def updateConsumptionStatistics(float consumption)
 {
 	Date now = new Date()
+	Long nowEpoch = now.getTime()
 	
 	if (!state.consumptionThisMonthStartValue) {
 		state.consumptionThisMonthStartValue = consumption
 		state.consumptionThisMonthStartDate = now
+		state.consumptionThisMonthStartEpoch = nowEpoch
  	}
 
 	if (!state.consumptionThisWeekStartValue) {
 		state.consumptionThisWeekStartValue = consumption
 		state.consumptionThisWeekStartDate = now
+		state.consumptionThisWeekStartEpoch = nowEpoch
  	}
+	
+	if (!state.consumptionThisWeekStartEpoch) // ugly workaround for backward compatibility - to be removed
+	{
+		state.consumptionThisMonthStartEpoch = nowEpoch
+		state.consumptionThisWeekStartEpoch = nowEpoch
+	}
 
-	Date thisMonthStartDate = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.consumptionThisMonthStartDate)
-	Date thisWeekStartDate = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.consumptionThisWeekStartDate)
+	Date thisMonthStartDate = new Date(state.consumptionThisMonthStartEpoch as Long)
+	Date thisWeekStartDate = new Date(state.consumptionThisWeekStartEpoch as Long)
 	
 	if (!electricityCost) {
 		log.warn("Price of electricity is not set, cannot compute costs!")
@@ -534,6 +540,7 @@ private updateConsumptionStatistics(float consumption)
 		state.consumptionLastMonthValue = lastMonthConsumption
 		state.consumptionThisMonthStartValue = consumption
 		state.consumptionThisMonthStartDate = now
+		state.consumptionThisMonthStartEpoch = nowEpoch
 
 		if (electricityCost) {
 			state.consumptionLastMonthCost = lastMonthConsumption * Double.parseDouble(electricityCost)
@@ -548,6 +555,7 @@ private updateConsumptionStatistics(float consumption)
 		state.consumptionLastWeekValue = lastWeekConsumption
 		state.consumptionThisWeekStartValue = consumption
 		state.consumptionThisWeekStartDate = now
+		state.consumptionThisWeekStartEpoch = nowEpoch
 
 		if (electricityCost) {
 			state.consumptionLastWeekCost = lastWeekConsumption * Double.parseDouble(electricityCost)
