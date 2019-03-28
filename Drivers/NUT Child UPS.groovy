@@ -17,7 +17,7 @@
  */
 
 metadata {
-    definition (name: "NUT Child UPS", namespace: "guyee", author: "P�ter Guly�s") {
+    definition (name: "NUT Child UPS", namespace: "guyee", author: "Peter Gulyas") {
         capability "Refresh"
 		capability "TemperatureMeasurement"
 		capability "PowerSource"
