@@ -1,4 +1,4 @@
-/**
+﻿/**
  *  NUT Child UPS Device Type for Hubitat
  *  Peter Gulyas (@guyeeba)
  *
@@ -63,11 +63,16 @@ def refresh() {
     parent.childRefresh(getUPSName())
 }
 
+// Adds a '+' prefix to the first item's value in case it has a child item. Makes processing much more easier in switch blocks
+def getLeafDesignation(String[] msg) {
+	return (msg.length == 1 ? "" : "+") + msg[0]
+}
+
 def parseVAR(String[] msg) {
 	def key = msg[0].split('\\.', -1)
 	def value = msg.length > 1 ? msg[1] : null
 	
-	switch (key[0]) {
+	switch (getLeafDesignation(key)) {
 		case "battery":
 			parseBATTERY(key.drop(1), value)
 			break
@@ -95,7 +100,7 @@ def parseVAR(String[] msg) {
 }
 
 def parseBATTERY(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "charge":
 			sendEvent( [
 				name: 'battery',
@@ -125,7 +130,7 @@ def parseBATTERY(String[] msg, String value) {
 }
 
 def parseDEVICE(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "mfr":
 			sendEvent( [
 				name: 'deviceManufacturer',
@@ -153,7 +158,7 @@ def parseDEVICE(String[] msg, String value) {
 }
 
 def parseDRIVER(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "name":
 			sendEvent( [
 				name: 'driverName',
@@ -181,7 +186,7 @@ def parseDRIVER(String[] msg, String value) {
 }
 
 def parseDRIVER_VERSION(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "internal":
 			sendEvent( [
 				name: 'driverVersionInternal',
@@ -202,7 +207,7 @@ def parseDRIVER_VERSION(String[] msg, String value) {
 }
 
 def parseUPS(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "temperature":
 			sendEvent( [
 				name: 'temperature',
@@ -291,23 +296,31 @@ def parseUPS(String[] msg, String value) {
 			break;
 		case "beeper": // Not really interesting
 			break;
-		case "power":
-			if (msg.length > 1 && msg[1] == "nominal") {
-				sendEvent( [
-					name: 'deviceNominalPower',
-					value: Integer.parseInt(value),
-					unit: "VA",
-					descriptionText: "Device nominal power is ${Integer.parseInt(value)}VA"
-				])
-			}
+		case "+power":
+			parseUPS_POWER(msg.drop(1), value)
 			break;
 		default:
 			displayDebugLog("ParseUPS: Couldn't process message: \"${msg} - ${value}\"")
 	}
 }
 
+def parseUPS_POWER(String[] msg, String value) {
+	switch (getLeafDesignation(msg)) {
+		case "nominal":
+			sendEvent( [
+				name: 'deviceNominalPower',
+				value: Integer.parseInt(value),
+				unit: "VA",
+				descriptionText: "Device nominal power is ${Integer.parseInt(value)}VA"
+			])
+		break;
+		default:
+			displayDebugLog("ParseUPS_POWER: Couldn't process message: \"${msg} - ${value}\"")
+	}
+}
+			
 def parseINPUT(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "voltage":
 			sendEvent( [
 				name: 'inputVoltage',
@@ -322,47 +335,61 @@ def parseINPUT(String[] msg, String value) {
 }
 
 def parseOUTPUT(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "voltage":
-			if (msg.length > 1 && msg[1] == "nominal") {
-				sendEvent( [
-					name: 'outputVoltageNominal',
-					value: Float.parseFloat(value),
-					unit: "V",
-					descriptionText: "Nominal output voltage is ${Float.parseFloat(value)}V"
-				])
-			} else if (msg.length == 1) {
-				sendEvent( [
-					name: 'outputVoltage',
-					value: Float.parseFloat(value),
-					unit: "V",
-					descriptionText: "Output voltage is ${Float.parseFloat(value)}V"
-				])
-			} else {
-				displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
-			}
+			sendEvent( [
+				name: 'outputVoltage',
+				value: Float.parseFloat(value),
+				unit: "V",
+				descriptionText: "Output voltage is ${Float.parseFloat(value)}V"
+			])
+			break;
+		case "+voltage":
+			parseOUTPUT_VOLTAGE(msg.drop(1), value)
 			break;
 		case "frequency":
-			if (msg.length > 1 && msg[1] == "nominal") {
-				sendEvent( [
-					name: 'outputFrequencyNominal',
-					value: Float.parseFloat(value),
-					unit: "Hz",
-					descriptionText: "Nominal output frequency is ${Float.parseFloat(value)}Hz"
-				])
-			} else if (msg.length == 1) {
-				sendEvent( [
-					name: 'outputFrequency',
-					value: Float.parseFloat(value),
-					unit: "Hz",
-					descriptionText: "Output frequency is ${Float.parseFloat(value)}Hz"
-				])
-			} else {
-				displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
-			}
+			sendEvent( [
+				name: 'outputFrequency',
+				value: Float.parseFloat(value),
+				unit: "Hz",
+				descriptionText: "Output frequency is ${Float.parseFloat(value)}Hz"
+			])
+			break;
+		case "+frequency":
+			parseOUTPUT_FREQUENCY(msg.drop(1), value)
 			break;
 		default:
 			displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
+	}
+}
+
+def parseOUTPUT_VOLTAGE(String[] msg, String value) {
+	switch (getLeafDesignation(msg)) {
+		case "nominal":
+			sendEvent( [
+				name: 'outputVoltageNominal',
+				value: Float.parseFloat(value),
+				unit: "V",
+				descriptionText: "Nominal output voltage is ${Float.parseFloat(value)}V"
+			])
+			break;
+		default:
+			displayDebugLog("ParseOUTPUT_VOLTAGE: Couldn't process message: \"${msg}\"")
+	}
+}
+
+def parseOUTPUT_FREQUENCY(String[] msg, String value) {
+	switch (getLeafDesignation(msg)) {
+		case "nominal":
+			sendEvent( [
+				name: 'outputFrequencyNominal',
+				value: Float.parseFloat(value),
+				unit: "Hz",
+				descriptionText: "Nominal output frequency is ${Float.parseFloat(value)}Hz"
+			])
+			break;
+		default:
+			displayDebugLog("ParseOUTPUT_FREQUECY: Couldn't process message: \"${msg}\"")
 	}
 }
 
