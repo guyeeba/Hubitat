@@ -1,6 +1,6 @@
 /**
  *  NUT Child UPS Outlet Device Type for Hubitat
- *  Péter Gulyás (@guyeeba)
+ *  Peter Gulyas (@guyeeba)
  *
  *  Usage:
  *  See NUT UPS Driver
@@ -33,8 +33,13 @@ def refresh() {
     parent.refresh()
 }
 
+// Adds a '+' prefix to the first item's value in case it has a child item. Makes processing much more easier in switch blocks
+def getLeafDesignation(String[] msg) {
+	return (msg.length == 1 ? "" : "+") + msg[0]
+}
+
 def parseOUTLET(String[] msg, String value) {
-	switch (msg[0]) {
+	switch (getLeafDesignation(msg)) {
 		case "id":
 		break;
 		case "status":
