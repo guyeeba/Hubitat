@@ -73,25 +73,25 @@ def parseVAR(String[] msg) {
 	def value = msg.length > 1 ? msg[1] : null
 	
 	switch (getLeafDesignation(key)) {
-		case "battery":
+		case "+battery":
 			parseBATTERY(key.drop(1), value)
 			break
-		case "device":
+		case "+device":
 			parseDEVICE(key.drop(1), value)
 			break
-		case "driver":
+		case "+driver":
 			parseDRIVER(key.drop(1), value)
 			break
-		case "ups":
+		case "+ups":
 			parseUPS(key.drop(1), value)
 			break
-		case "input":
+		case "+input":
 			parseINPUT(key.drop(1), value)
 			break
-		case "output":
+		case "+output":
 			parseOUTPUT(key.drop(1), value)
 			break
-		case "outlet":
+		case "+outlet":
 			parseOUTLET(key.drop(1), value)
 			break
 		default:
@@ -167,21 +167,19 @@ def parseDRIVER(String[] msg, String value) {
 			])
 			break;
 		case "version":
-			if (msg.length == 1) {
-				sendEvent( [
-					name: 'driverVersion',
-					value: value,
-					descriptionText: "Driver version is ${value}"
-				])
-			}
-			else {
-				parseDRIVER_VERSION(msg.drop(1), value)
-			}
+			sendEvent( [
+				name: 'driverVersion',
+				value: value,
+				descriptionText: "Driver version is ${value}"
+			])
 			break;
-		case "parameter": // Not really interesting
+ 		case "+version":
+			parseDRIVER_VERSION(msg.drop(1), value)
+			break;
+		case "+parameter": // Not really interesting
 			break;
 		default:
-			displayDebugLog("ParseDEVICE: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseDRIVER: Couldn't process message: \"${msg}\"")
 	}
 }
 
