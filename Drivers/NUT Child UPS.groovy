@@ -1,6 +1,6 @@
 /**
  *  NUT Child UPS Device Type for Hubitat
- *  Péter Gulyás (@guyeeba)
+ *  Peter Gulyas (@guyeeba)
  *
  *  Usage:
  *  See NUT UPS Driver
@@ -17,7 +17,7 @@
  */
 
 metadata {
-    definition (name: "NUT Child UPS", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "NUT Child UPS", namespace: "guyee", author: "Pï¿½ter Gulyï¿½s") {
         capability "Refresh"
 		capability "TemperatureMeasurement"
 		capability "PowerSource"
@@ -54,6 +54,9 @@ metadata {
 
 	attribute "outletDescription", "String"
 	attribute "outletSwitchable", "Boolean"
+	preferences { 
+	input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
+	}
 }
 
 def refresh() {
@@ -87,7 +90,7 @@ def parseVAR(String[] msg) {
 			parseOUTLET(key.drop(1), value)
 			break
 		default:
-			log.error("ParseVAR: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseVAR: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -117,7 +120,7 @@ def parseBATTERY(String[] msg, String value) {
 			])
 			break;
 		default:
-			log.error("ParseBATTERY: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseBATTERY: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -145,7 +148,7 @@ def parseDEVICE(String[] msg, String value) {
 			])
 			break;
 		default:
-			log.error("ParseDEVICE: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseDEVICE: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -173,7 +176,7 @@ def parseDRIVER(String[] msg, String value) {
 		case "parameter": // Not really interesting
 			break;
 		default:
-			log.error("ParseDEVICE: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseDEVICE: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -194,7 +197,7 @@ def parseDRIVER_VERSION(String[] msg, String value) {
 			])
 			break;
 		default:
-			log.error("ParseDEVICE: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseDEVICE: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -204,8 +207,8 @@ def parseUPS(String[] msg, String value) {
 			sendEvent( [
 				name: 'temperature',
 				value: Float.parseFloat(value),
-				unit: "°C",
-				descriptionText: "Temperature is ${Float.parseFloat(value)}°C"
+				unit: "ï¿½C",
+				descriptionText: "Temperature is ${Float.parseFloat(value)}ï¿½C"
 			])
 			break;
 		case "load":
@@ -299,7 +302,7 @@ def parseUPS(String[] msg, String value) {
 			}
 			break;
 		default:
-			log.error("ParseUPS: Couldn't process message: \"${msg} - ${value}\"")
+			displayDebugLog("ParseUPS: Couldn't process message: \"${msg} - ${value}\"")
 	}
 }
 
@@ -314,7 +317,7 @@ def parseINPUT(String[] msg, String value) {
 			])
 			break;
 		default:
-			log.error("ParseINPUT: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseINPUT: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -336,7 +339,7 @@ def parseOUTPUT(String[] msg, String value) {
 					descriptionText: "Output voltage is ${Float.parseFloat(value)}V"
 				])
 			} else {
-				log.error("ParseOUTPUT: Couldn't process message: \"${msg}\"")
+				displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
 			}
 			break;
 		case "frequency":
@@ -355,11 +358,11 @@ def parseOUTPUT(String[] msg, String value) {
 					descriptionText: "Output frequency is ${Float.parseFloat(value)}Hz"
 				])
 			} else {
-				log.error("ParseOUTPUT: Couldn't process message: \"${msg}\"")
+				displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
 			}
 			break;
 		default:
-			log.error("ParseOUTPUT: Couldn't process message: \"${msg}\"")
+			displayDebugLog("ParseOUTPUT: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -388,15 +391,18 @@ def parseOUTLET(String[] msg, String value) {
 				def childOutlet = getChildDevice(getOutletDNID(outletId))
 				
 				if (childOutlet == null) {
-					log.debug "Outlet ${outletId} not found, creating"
+					displayDebugLog "Outlet ${outletId} not found, creating"
 					childOutlet = addChildDevice("guyee", "NUT Child UPS Outlet", getOutletDNID(outletId), [name: "Outlet ${outletId}", label: "Outlet ${outletId}", completedSetup: true, isComponent: false ])
 				}
 				
 				childOutlet.parseOUTLET(msg.drop(1), value)
 			} else {
-				log.error("ParseOUTLET: Couldn't process message: \"${msg}\"")
+				displayDebugLog("ParseOUTLET: Couldn't process message: \"${msg}\"")
 			}
 	}
+}
+private displayDebugLog(message) {
+	if (logEnable) log.debug "${device.displayName}: ${message}"
 }
 
 def getUPSName() {
