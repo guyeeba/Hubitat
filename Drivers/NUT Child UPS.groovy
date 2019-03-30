@@ -30,6 +30,7 @@ metadata {
 	
 	attribute "batteryRuntimeSecs", "Integer"
 	attribute "batteryType", "String"
+	attribute "batteryVoltage", "Float"
 
 	attribute "deviceManufacturer", "String"
 	attribute "deviceModel", "String"
@@ -45,8 +46,6 @@ metadata {
 	attribute "load", "Float"
 	attribute "status", "String"
 
-	attribute "inputVoltage", "Float"
-	
 	attribute "outputVoltage", "Float"
 	attribute "outputVoltageNominal", "Float"
 	attribute "outputFrequency", "Float"
@@ -107,6 +106,14 @@ def parseBATTERY(String[] msg, String value) {
 				value: Float.parseFloat(value),
 				unit: "%",
 				descriptionText: "Battery is at ${Float.parseFloat(value)}%"
+			])
+			break;
+		case "voltage":
+			sendEvent( [
+				name: 'batteryVoltage',
+				value: Float.parseFloat(value),
+				unit: "V",
+				descriptionText: "Battery voltage is ${Float.parseFloat(value)}V"
 			])
 			break;
 		case "runtime":
@@ -321,7 +328,7 @@ def parseINPUT(String[] msg, String value) {
 	switch (getLeafDesignation(msg)) {
 		case "voltage":
 			sendEvent( [
-				name: 'inputVoltage',
+				name: 'voltage',
 				value: Float.parseFloat(value),
 				unit: "V",
 				descriptionText: "Input voltage is ${Float.parseFloat(value)}V"
