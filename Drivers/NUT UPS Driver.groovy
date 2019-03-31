@@ -59,6 +59,9 @@ def parse(String message) {
 		case "VAR":
 			parseVAR(msg.drop(1))
 			break
+		case "OK":
+			parseOK(msg.drop(1))
+			break
 		default:
 			log.error("Parse: Couldn't process message: \"${message}\"")
 	}
@@ -70,7 +73,7 @@ def parseBEGIN(String[] msg) {
 			parseBEGIN_LIST(msg.drop(1))
 			break
 		default:
-			log.error("ParseBEGIN: Couldn't process message: \"${message}\"")
+			log.error("ParseBEGIN: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -83,7 +86,7 @@ def parseBEGIN_LIST(String[] msg) {
 			displayDebugLog "Processing of values for \"${msg[1]}\" started"
 			break
 		default:
-			log.error("ParseBEGIN_LIST: Couldn't process message: \"${message}\"")
+			log.error("ParseBEGIN_LIST: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -93,7 +96,7 @@ def parseEND(String[] msg) {
 			parseEND_LIST(msg.drop(1))
 			break
 		default:
-			log.error("ParseEND: Couldn't process message: \"${message}\"")
+			log.error("ParseEND: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -106,7 +109,7 @@ def parseEND_LIST(String[] msg) {
 			displayDebugLog "Processing of values for \"${msg[1]}\" finished"
 			break
 		default:
-			log.error("ParseEND_LIST: Couldn't process message: \"${message}\"")
+			log.error("ParseEND_LIST: Couldn't process message: \"${msg}\"")
 	}
 }
 
@@ -121,6 +124,19 @@ def parseUPS(String[] msg) {
 
 def parseVAR(String[] msg) {
 	getChildDevice(getUPSDNID(msg[0]))?.parseVAR(msg.drop(1))
+}
+
+def parseOK(String[] msg) {
+	switch(device.currentState("State", true).value) {
+		case STATE_AUTH_PHASE1:
+			nutAuthPhase2()
+			break
+		case STATE_AUTH_PHASE2:
+			nutListUPS()
+			break
+		default:
+			log.error("ParseOK: Couldn't process message: \"${msg}\"")
+	}
 }
 
 def telnetStatus(String status){
@@ -161,12 +177,38 @@ def connectToServer() {
 	if (nutServerHost != null && nutServerPort != null) {
 		log.info "Opening telnet connection"
 		setState(STATE_CONNECTING)
-		telnetConnect([termChars:[10]], nutServerHost, nutServerPort.toInteger(), nutServerLoginUsername, nutServerLoginPassword)
+		telnetConnect([termChars:[10]], nutServerHost, nutServerPort.toInteger(), null, null)
 		pauseExecution(1000)
-		return nutListUPS()
+		if (isAuthRequired()) {
+			nutAuthPhase1()
+		}
+		else {
+			nutListUPS()
+		}
 	} else {
 		log.error "NUT server proprties not set"
 	}
+}
+
+def isAuthRequired() {
+	if (nutServerLoginUsername != null && nutServerLoginPassword != null) {
+		return true
+	} else {
+		if (nutServerLoginUsername != null || nutServerLoginPassword != null) {
+			log.warn "To authenticate to NUT server, both username AND password must be given. Defaulting to unathenticated session"
+		}
+		return false
+	}
+}
+
+def nutAuthPhase1() {
+	setState(STATE_AUTH_PHASE1)
+	sendMsg("USERNAME ${nutServerLoginUsername}")
+}
+
+def nutAuthPhase2() {
+	setState(STATE_AUTH_PHASE2)
+	sendMsg("PASSWORD ${nutServerLoginPassword}")
 }
 
 def nutListUPS() {
@@ -196,7 +238,7 @@ def setState(String newState) {
 }
 
 def setState(String newState, String additionalInfo) {
-	sendEvent([ name: "State", value: newState + " (${additionalInfo})" ])
+	sendEvent([ name: "State", value: newState + " (${additionalInfo})", isStateChange: true ])
 }
 
 private def displayDebugLog(message) {
@@ -209,3 +251,5 @@ private def displayDebugLog(message) {
 @Field static final String STATE_REFRESH = "Refreshing values"
 @Field static final String STATE_WAITINGFOREVENT = "Waiting for events to occur"
 @Field static final String STATE_NETWORKERROR = "Network Error"
+@Field static final String STATE_AUTH_PHASE1 = "Authentication - Phase 1"
+@Field static final String STATE_AUTH_PHASE2 = "Authentication - Phase 2"
