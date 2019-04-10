@@ -1,5 +1,5 @@
 metadata {
-    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLZKMK11LM)", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLZKMK11LM)", namespace: "guyee", author: "PÃ©ter GulyÃ¡s") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
@@ -248,9 +248,9 @@ def parseXiaomiReport(description) {
         events += [
 			name: 'temperature',
 			value: manufacturerSpecificValues["Temperature"],
-			unit: "°C",
+			unit: "Â°C",
 			isStateChange: true,
-			descriptionText: "Temperature is ${manufacturerSpecificValues["Temperature"]}°C"
+			descriptionText: "Temperature is ${manufacturerSpecificValues["Temperature"]}Â°C"
 		]
     }
 
