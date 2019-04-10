@@ -1,5 +1,5 @@
 metadata {
-    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral)", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLZKMK11LM)", namespace: "guyee", author: "Péter Gulyás") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
@@ -21,7 +21,7 @@ metadata {
 		// - endpoint 0x06, cluster 0x0012 (multistate input), attr 0x0055: Right button pushed (value = 0x0001)
 		// features:
 		// - Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
-		// - Disconnect right button from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		// - Disconnect right button from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF23 of endpoint 0x01, cluster 0x0000
 		fingerprint profileId: "0104", inClusters: "0000,0004,0003,0006,0010,0005,000A,0001,0002", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.ctrl_ln2.aq1", deviceJoinName: "Aqara Wall switch"
 		// one button, neutral required (QBKG11LM)
 		// reports:
@@ -30,6 +30,14 @@ metadata {
 		// features:
 		// - Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
 		fingerprint profileId: "0104", inClusters: "0000,0004,0003,0006,0010,0005,000A,0001,0002", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.ctrl_ln1.aq1", deviceJoinName: "Aqara Wall switch"
+		// two buttons, neutral required (QBKG12LM)
+		// reports:
+		// - endpoint 0x01, cluster 0x0006 (on/off),           attr 0x0000: Left button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
+		// - endpoint 0x02, cluster 0x0002 (on/off),           attr 0x0000: Right button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
+		// features:
+		// - Disconnect S1 from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF23 of endpoint 0x01, cluster 0x0000
+		// - Disconnect S2 from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		fingerprint profileId: "0104", inClusters: "0000,0003,0004,0005,0001,0002,000A,0006,0010,0B04,000C", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.relay.c2acn01", deviceJoinName: "Aqara Double Relay"
     }
 
     preferences {
@@ -94,14 +102,14 @@ def parse(String description) {
             if (attrId == 0x0055) { // current state
 			    def childDevice = getChildDevice("${device.zigbeeId}-${endpoint}")
 				
-				if (valueHex == "0001") {
+				if (valueHex == "0100") {
 					events += [
 						name: "pushed",
 						value: EPtoIndex(endpoint),
 						isStateChange: true,
 						descriptionText: "Button was single-clicked"
 	                ]
-				} else if (valueHex == "0002") {
+				} else if (valueHex == "0200") {
 					events += [
 						name: "doubleTapped",
 						value: EPtoIndex(endpoint),
@@ -340,13 +348,13 @@ def parseXiaomiReport_FF01(payload) {
             	break;
 			case 0x95: // energy
 				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
-				float floatValue = Float.intBitsToFloat(theValue.intValue());
-            	values += [ Energy : floatValue ]
+				Float floatValue = Float.intBitsToFloat(theValue.intValue());
+            	values += [ Energy : floatValue.round(4) ]
             	break;
 			case 0x98: // power
 				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
 				float floatValue = Float.intBitsToFloat(theValue.intValue());
-            	values += [ Power : floatValue ]
+            	values += [ Power : floatValue.round(2) ]
             	break;
             default:
 		        displayDebugLog("Unsupported tag in Xiaomi Report msg: dataTag = 0x${Integer.toHexString(dataTag)}, type = 0x${Integer.toHexString(dataType)}, length = ${dataLen} bytes, payload = ${dataPayload}")
@@ -396,13 +404,21 @@ def configure() {
 	    cmds += [
             //bindings
             "zdo bind 0x${device.deviceNetworkId} ${endpointId} 1 0x0006 {${device.zigbeeId}} {}", "delay 200",
+            "zdo bind 0x${device.deviceNetworkId} ${endpointId} 1 0x000C {${device.zigbeeId}} {}", "delay 200",
             //reporting
             "he cr 0x${device.deviceNetworkId} ${endpointId} 0x0006 0 0x10 0 0x3600 {}","delay 200",
     	]
     }
 
-	cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
-	cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x22, [mfgCode: "0x115F"])
+	
+	if (device.data.model == "lumi.relay.c2acn01") {
+		log.warn "Button separation function for Aqara Double relay not working yet"
+		cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+		cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+	} else {
+		cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+		cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x22, [mfgCode: "0x115F"])
+	}
 
 	cmds += refresh()
     
