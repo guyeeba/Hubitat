@@ -1,6 +1,7 @@
 /*
  *  Orvibo Zigbee multi-functional relay (RL804QZB)
  *  Device Driver for Hubitat Elevation hub
+ *  Version: 1.0.0 BETA
  *
  *  Parent device button capability pulses the output of the device (emulating push button). The child switches are... just switches. :)
  *
@@ -17,7 +18,7 @@
  */
 
 metadata {
-	definition (name: "Orvibo Zigbee multi-functional relay (RL804QZB)", namespace: "guyee", author: "Péter GULYÁS") {
+	definition (name: "Orvibo Zigbee multi-functional relay (RL804QZB)", namespace: "guyee", author: "Péter GULYÁS", importUrl: "https://raw.githubusercontent.com/guyeeba/Hubitat/master/Drivers/Orvibo%20Zigbee%20multi-functional%20relay-RL804QZB.groovy") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
