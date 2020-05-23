@@ -1,5 +1,5 @@
 metadata {
-    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLZKMK11LM)", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLKZMK11LM)", namespace: "guyee", author: "Péter Gulyás") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
