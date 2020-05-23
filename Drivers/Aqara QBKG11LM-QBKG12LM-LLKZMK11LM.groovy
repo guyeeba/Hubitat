@@ -6,11 +6,13 @@ metadata {
 		capability "DoubleTapableButton" // QBKG12LM only
 		capability "Power Meter"
 		capability "Energy Meter"
+        capability "Voltage Measurement" // LLZKMK11LM only
 		capability "Temperature Measurement"
 
         command "childOn"
         command "childOff"
         command "childRefresh"
+        command "setParams", ["Number"]
         command "recreateChildDevices"
         command "deleteChildren"
 		// two buttons, neutral required (QBKG12LM)
@@ -30,13 +32,19 @@ metadata {
 		// features:
 		// - Disconnect left button from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
 		fingerprint profileId: "0104", inClusters: "0000,0004,0003,0006,0010,0005,000A,0001,0002", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.ctrl_ln1.aq1", deviceJoinName: "Aqara Wall switch"
-		// two buttons, neutral required (QBKG12LM)
+		// two relays, two switch inputs, neutral required (LLZKMK11LM)
 		// reports:
-		// - endpoint 0x01, cluster 0x0006 (on/off),           attr 0x0000: Left button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
-		// - endpoint 0x02, cluster 0x0002 (on/off),           attr 0x0000: Right button relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
+		// - endpoint 0x01, cluster 0x0006 (on/off),           attr 0x0000: L1 relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
+		// - endpoint 0x02, cluster 0x0002 (on/off),           attr 0x0000: L2 relay state (first octet 0x00=off, 0x01=on, the rest is Xiaomi-specific stuff)
 		// features:
-		// - Disconnect S1 from relay: write uint8 (0x20) value (connected: 0x12, disconnected: 0xFE) to attribute 0xFF23 of endpoint 0x01, cluster 0x0000
-		// - Disconnect S2 from relay: write uint8 (0x20) value (connected: 0x22, disconnected: 0xFE) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		// - Control the function(s) of S1: write uint8 (0x20) value (see below) to attribute 0xFF22 of endpoint 0x01, cluster 0x0000
+		// - Control the function(s) of S2: write uint8 (0x20) value (see below) to attribute 0xFF23 of endpoint 0x01, cluster 0x0000
+        // The value is the sum of two numbers from the table (e.g. to invert the state of L1 and turn L2 ON, you have to send 32+1=33 to the corresponding attribute):
+        //             L1        L2
+        // OFF          0         0 
+        // ON          16         1
+        // INVERT      32         2
+        // NOP        240        15
 		fingerprint profileId: "0104", inClusters: "0000,0003,0004,0005,0001,0002,000A,0006,0010,0B04,000C", outClusters: "0019,000A", manufacturer: "LUMI", model: "lumi.relay.c2acn01", deviceJoinName: "Aqara Double Relay"
     }
 
@@ -45,8 +53,8 @@ metadata {
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
         input name: "electricityCost", type: "float", title: "The price of 1 kWh of electricity", defaultValue: 0
-        input name: "leftButtonDisconnect", type: "bool", title: "Disconnect left button from switch", defaultValue: false
-        input name: "rightButtonDisconnect", type: "bool", title: "Disconnect right button from switch (double button devices)", defaultValue: false
+        input name: "leftButtonDisconnect", type: "bool", title: "Disconnect left button (or S1) from switch", defaultValue: false
+        input name: "rightButtonDisconnect", type: "bool", title: "Disconnect right button (or S2) from switch (double button devices)", defaultValue: false
     }
 }
 
@@ -239,7 +247,6 @@ def parseXiaomiReport(description) {
 			name: 'battery',
 			value: manufacturerSpecificValues["BatteryPct"],
 			unit: "%",
-			isStateChange: true,
 			descriptionText: "Battery level is ${manufacturerSpecificValues["BatteryPct"]}% (${manufacturerSpecificValues["BatteryVolts"]} Volts)"
 		]
     }
@@ -249,7 +256,6 @@ def parseXiaomiReport(description) {
 			name: 'temperature',
 			value: manufacturerSpecificValues["Temperature"],
 			unit: "°C",
-			isStateChange: true,
 			descriptionText: "Temperature is ${manufacturerSpecificValues["Temperature"]}°C"
 		]
     }
@@ -259,8 +265,16 @@ def parseXiaomiReport(description) {
 			name: 'power',
 			value: manufacturerSpecificValues["Power"],
 			unit: "W",
-			isStateChange: true,
 			descriptionText: "Actual power consumption is ${manufacturerSpecificValues["Power"]}W"
+		]
+    }
+
+    if (manufacturerSpecificValues?.containsKey("Voltage")) {
+        events += [
+			name: 'voltage',
+			value: manufacturerSpecificValues["Voltage"],
+			unit: "V",
+			descriptionText: "Actual voltage is ${manufacturerSpecificValues["Voltage"]}V"
 		]
     }
 
@@ -269,7 +283,6 @@ def parseXiaomiReport(description) {
 			name: 'energy',
 			value: manufacturerSpecificValues["Energy"],
 			unit: "kWh",
-			isStateChange: true,
 			descriptionText: "Power consumption so far is ${manufacturerSpecificValues["Energy"]}kWh"
 		]
 		
@@ -341,15 +354,27 @@ def parseXiaomiReport_FF01(payload) {
             	values += [ RouterID : Integer.toHexString(toBigEndian(dataPayload)) ]
             	break;
             case 0x64: // switch 1 state
+            case 0x6e: // switch 1 state
             	values += [ Switch1State : toBigEndian(dataPayload) ]
             	break;
             case 0x65: // switch 2 state
+            case 0x6f: // switch 2 state
             	values += [ Switch2State : toBigEndian(dataPayload) ]
             	break;
 			case 0x95: // energy
 				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
 				Float floatValue = Float.intBitsToFloat(theValue.intValue());
             	values += [ Energy : floatValue.round(4) ]
+            	break;
+			case 0x96: // voltage
+				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
+				Float floatValue = Float.intBitsToFloat(theValue.intValue()) / 10;
+            	values += [ Voltage : floatValue.round(2) ]
+            	break;
+			case 0x97: // power?
+				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
+				float floatValue = Float.intBitsToFloat(theValue.intValue());
+            	values += [ Power2 : floatValue.round(4) ]
             	break;
 			case 0x98: // power
 				long theValue = Long.parseLong(toBigEndianHexString(dataPayload), 16)
@@ -394,6 +419,26 @@ def childOff(String deviceId) {
     return cmd
 }
 
+def setParams(num) {
+    byte val1 = num
+    sendZigbeeCommands([
+        zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, val1, [mfgCode: "0x115F"])[0], "delay 300",
+        zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, val1, [mfgCode: "0x115F"])[0]
+])
+}
+
+void sendZigbeeCommands(ArrayList<String> cmd) {
+    hubitat.device.HubMultiAction allActions = new hubitat.device.HubMultiAction()
+    cmd.each {
+        if(it.startsWith('delay') == true) {
+            allActions.add(new hubitat.device.HubAction(it))
+        } else {
+            allActions.add(new hubitat.device.HubAction(it, hubitat.device.Protocol.ZIGBEE))
+        }
+    }
+    sendHubCommand(allActions)
+}
+
 def configure() {
     log.info "configure..."
     runIn(1800,logsOff)
@@ -411,10 +456,9 @@ def configure() {
     }
 
 	
-	if (device.data.model == "lumi.relay.c2acn01") {
-		log.warn "Button separation function for Aqara Double relay not working yet"
-		cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
-		cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
+	if (device.data.model.startsWith("lumi.relay.c2acn01")) {
+		cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0xF2, [mfgCode: "0x115F"])
+		cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x2F, [mfgCode: "0x115F"])
 	} else {
 		cmds += zigbee.writeAttribute(0x0000, 0xFF22, DataType.UINT8, leftButtonDisconnect ? 0xFE : 0x12, [mfgCode: "0x115F"])
 		cmds += zigbee.writeAttribute(0x0000, 0xFF23, DataType.UINT8, rightButtonDisconnect ? 0xFE : 0x22, [mfgCode: "0x115F"])
