@@ -1,5 +1,5 @@
 metadata {
-    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLKZMK11LM)", namespace: "guyee", author: "Péter Gulyás") {
+    definition (name: "Aqara Wall Switch (QBKG11LM, QBKG12LM, neutral), Double relay (LLKZMK11LM)", namespace: "guyee", author: "Péter Gulyás", importUrl: "https://raw.githubusercontent.com/guyeeba/Hubitat/master/Drivers/Aqara%20QBKG11LM-QBKG12LM-LLKZMK11LM.groovy") {
         capability "Configuration"
         capability "Refresh"
 		capability "PushableButton"
@@ -55,6 +55,7 @@ metadata {
         input name: "electricityCost", type: "float", title: "The price of 1 kWh of electricity", defaultValue: 0
         input name: "leftButtonDisconnect", type: "bool", title: "Disconnect left button (or S1) from switch", defaultValue: false
         input name: "rightButtonDisconnect", type: "bool", title: "Disconnect right button (or S2) from switch (double button devices)", defaultValue: false
+        input name: "tempUnitDisplayed", type: "enum", title: "Displayed Temperature Unit", description: "", defaultValue: "1", required: true, multiple: false, options:[["1":"Celsius"], ["2":"Fahrenheit"]]
     }
 }
 
@@ -252,10 +253,14 @@ def parseXiaomiReport(description) {
     }
 
 	if (manufacturerSpecificValues?.containsKey("Temperature")) {
+        def metric = "°C"
+        if (tempUnitDisplayed == "2") {
+            metric = "°F"
+        }
         events += [
 			name: 'temperature',
 			value: manufacturerSpecificValues["Temperature"],
-			unit: "°C",
+			unit: metric,
 			descriptionText: "Temperature is ${manufacturerSpecificValues["Temperature"]}°C"
 		]
     }
@@ -342,7 +347,11 @@ def parseXiaomiReport_FF01(payload) {
             	values += [ BatteryVolts : rawVolts ]
             	break;
             case 0x03: // Temperature
-            	values += [ Temperature : Integer.parseInt(dataPayload, 16) - 8 ]  // Just a guess :)
+                def temperature = Integer.parseInt(dataPayload, 16) - 11 // Just a guess :)
+                if (tempUnitDisplayed == "2") {
+                    temperature = celsiusToFahrenheit(temperature)
+                }
+            	values += [ Temperature : temperature ]
             	break;
             case 0x05: // RSSI
             	values += [ RSSI : (toBigEndian(dataPayload) / 10) - 90 ]
