@@ -1,4 +1,4 @@
-﻿/**
+/**
  *  NUT Child UPS Device Type for Hubitat
  *  Peter Gulyas (@guyeeba)
  *
@@ -28,28 +28,28 @@ metadata {
 		capability "Battery"
 	}
 	
-	attribute "batteryRuntimeSecs", "Integer"
+	attribute "batteryRuntimeSecs", "Number"
 	attribute "batteryType", "String"
-	attribute "batteryVoltage", "Float"
+	attribute "batteryVoltage", "Number"
 
 	attribute "deviceManufacturer", "String"
 	attribute "deviceModel", "String"
 	attribute "deviceType", "String"
 	attribute "deviceFirmware", "String"
-	attribute "deviceNominalPower", "Integer"
+	attribute "deviceNominalPower", "Number"
 	
 	attribute "driverName", "String"
 	attribute "driverVersion", "String"
 	attribute "driverVersionInternal", "String"
 	attribute "driverVersionData", "String"
 	
-	attribute "load", "Float"
+	attribute "load", "Number"
 	attribute "status", "String"
 
-	attribute "outputVoltage", "Float"
-	attribute "outputVoltageNominal", "Float"
-	attribute "outputFrequency", "Float"
-	attribute "outputFrequencyNominal", "Float"
+	attribute "outputVoltage", "Number"
+	attribute "outputVoltageNominal", "Number"
+	attribute "outputFrequency", "Number"
+	attribute "outputFrequencyNominal", "Number"
 
 	attribute "outletDescription", "String"
 	attribute "outletSwitchable", "Boolean"
