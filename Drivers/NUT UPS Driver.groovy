@@ -1,6 +1,6 @@
 /**
  *  NUT UPS Device Type for Hubitat
- *  PÈter Guly·s (@guyeeba)
+ *  P√©ter Guly√°s (@guyeeba)
  *
  *  Usage:
  *  1. Add this code and "NUT Child UPS" as a device driver in the Hubitat Drivers Code section
@@ -177,7 +177,17 @@ def connectToServer() {
 	if (nutServerHost != null && nutServerPort != null) {
 		log.info "Opening telnet connection"
 		setState(STATE_CONNECTING)
-		telnetConnect([termChars:[10]], nutServerHost, nutServerPort.toInteger(), null, null)
+		connected = false
+		while(connected == false){
+		    try {
+			connected = true
+			telnetConnect([termChars:[10]], nutServerHost, nutServerPort.toInteger(), null, null)
+		    } catch(Exception ex) {
+			connected = false
+			log.error(ex)
+			pauseExecution(nutReconnectDelay*1000)
+		    }
+		}
 		pauseExecution(1000)
 		if (isAuthRequired()) {
 			nutAuthPhase1()
